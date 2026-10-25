@@ -761,16 +761,16 @@ async def generate_edge_neural_speech(
 
         # Select Voice by Gender & Language
         if is_bengali:
-            # bn-IN-BashkarNeural (Male, base ~125Hz) | bn-IN-TanishaaNeural (Female, base ~205Hz)
+            # bn-IN-BashkarNeural (Male, base ~135Hz) | bn-IN-TanishaaNeural (Female, base ~272Hz)
             voice = "bn-IN-BashkarNeural" if is_lower else "bn-IN-TanishaaNeural"
-            base_pitch = 125.0 if is_lower else 205.0
+            base_pitch = 135.0 if is_lower else 272.0
         else:
-            # en-IN-PrabhatNeural (Male, base ~130Hz) | en-IN-NeerjaExpressiveNeural (Female, base ~200Hz)
+            # en-IN-PrabhatNeural (Male, base ~130Hz) | en-IN-NeerjaExpressiveNeural (Female, base ~265Hz)
             voice = "en-IN-PrabhatNeural" if is_lower else "en-IN-NeerjaExpressiveNeural"
-            base_pitch = 130.0 if is_lower else 200.0
+            base_pitch = 130.0 if is_lower else 265.0
 
-        # Calculate exact pitch offset conforming to ^[+-]\d+Hz$
-        pitch_diff = int(round(pitch_val - base_pitch))
+        # Exact acoustic pitch matching (Edge SSML scaling factor ~1.75)
+        pitch_diff = int(round((pitch_val - base_pitch) / 1.75))
         pitch_diff = max(-50, min(50, pitch_diff))
         pitch_str = f"{'+' if pitch_diff >= 0 else ''}{pitch_diff}Hz"
 
