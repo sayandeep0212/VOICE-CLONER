@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #090D16;
+  --foreground: #F8FAFC;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom glowing effects */
+.glow-primary {
+  box-shadow: 0 0 50px -10px rgba(56, 189, 248, 0.35);
+}
+
+.glow-warm {
+  box-shadow: 0 0 45px -10px rgba(245, 158, 11, 0.3);
+}
+
+.glow-crisis {
+  box-shadow: 0 0 60px 5px rgba(239, 68, 68, 0.45);
+}
+
+/* Voice wave animation */
+@keyframes voice-bar {
+  0%, 100% { height: 12px; }
+  50% { height: 48px; }
+}
+
+.animate-voice-bar-1 { animation: voice-bar 1.1s ease-in-out infinite; }
+.animate-voice-bar-2 { animation: voice-bar 0.9s ease-in-out infinite 0.15s; }
+.animate-voice-bar-3 { animation: voice-bar 1.3s ease-in-out infinite 0.3s; }
+.animate-voice-bar-4 { animation: voice-bar 0.8s ease-in-out infinite 0.2s; }
+.animate-voice-bar-5 { animation: voice-bar 1.0s ease-in-out infinite 0.4s; }
+
+/* Accessible focus outlines for elders */
+button:focus-visible, a:focus-visible {
+  outline: 3px solid #38BDF8;
+  outline-offset: 4px;
+}

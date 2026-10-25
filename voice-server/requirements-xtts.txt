@@ -1,0 +1,11 @@
+# Full XTTS-v2 voice cloning — requires Python 3.9, 3.10, or 3.11 (NOT 3.12+).
+# Install Python 3.11 from https://www.python.org/downloads/, then:
+#   py -3.11 -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements-xtts.txt
+-r requirements.txt
+torch>=2.1.0
+TTS>=0.22.0
+scipy>=1.11.0
+numpy>=1.24.0
+requests>=2.31.0

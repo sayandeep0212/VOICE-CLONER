@@ -1,0 +1,15 @@
+# Voicebox Engine Dependencies for Smriti Voice Server
+# Voicebox Core: Qwen3-TTS zero-shot voice cloner & Kokoro
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+python-multipart>=0.0.9
+pydantic>=2.6.0
+numpy>=1.24.0
+soundfile>=0.12.0
+scipy>=1.10.0
+torch>=2.2.0
+transformers>=4.36.0
+huggingface_hub>=0.20.0
+qwen-tts>=0.1.1
+kokoro>=0.9.4
+misaki[en]>=0.9.4
