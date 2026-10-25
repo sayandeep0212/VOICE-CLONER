@@ -52,9 +52,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isValidUUID = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+    const GUARDIAN_DEFAULT_ID = '256880e3-c732-43a0-ba79-4f7e6f8182a4';
+
+    const personaId = isValidUUID(body.id) ? body.id : crypto.randomUUID();
+    const guardianId = isValidUUID(body.guardian_id) ? body.guardian_id : GUARDIAN_DEFAULT_ID;
+
     const persona: Persona = {
-      id: body.id || "persona-" + Date.now(),
-      guardian_id: body.guardian_id || "guardian-local",
+      id: personaId,
+      guardian_id: guardianId,
       name,
       relationship,
       nicknames: Array.isArray(nicknames) ? nicknames : [nicknames],

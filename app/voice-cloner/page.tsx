@@ -49,7 +49,7 @@ export default function VoiceClonerPage() {
   const recordTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Engine & Delivery Controls
-  const [selectedEngine, setSelectedEngine] = useState("voicebox_neural");
+  const [selectedEngine, setSelectedEngine] = useState("local_gpu_cloner");
   const [selectedLanguage, setSelectedLanguage] = useState("auto");
   const [instructPrompt, setInstructPrompt] = useState("Warm, comforting, and speaking with gentle grandmotherly love");
   const [testText, setTestText] = useState("Amar shona, kemon aacho tumi? Shob shomoy mone rekho ami tomar pashei aachi.");
@@ -710,23 +710,26 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-              {/* Voicebox Neural Cloner (Pitch & Timbre Matched) */}
+              {/* Local GPU Zero-Shot Cloner (RTX 4050) - PRIMARY */}
               <div
-                onClick={() => setSelectedEngine("voicebox_neural")}
+                onClick={() => setSelectedEngine("local_gpu_cloner")}
                 className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                  selectedEngine === "voicebox_neural"
-                    ? "bg-emerald-500/15 border-emerald-500 shadow-md shadow-emerald-500/10"
+                  selectedEngine === "local_gpu_cloner"
+                    ? "bg-emerald-500/20 border-emerald-500 shadow-md shadow-emerald-500/15 ring-1 ring-emerald-500"
                     : "bg-slate-800/40 border-slate-800 hover:border-slate-700"
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-bold text-sm text-slate-100">Voicebox Neural Cloner</span>
+                  <span className="font-bold text-sm text-slate-100 flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Local GPU Zero-Shot Cloner</span>
+                  </span>
                   <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    Recommended
+                    RTX 4050 GPU
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-normal">
-                  High-fidelity neural speech with exact pitch, warmth, and emotion matching. Supports Bengali and English.
+                  Zero-shot neural voice cloning running 100% locally on your NVIDIA RTX 4050 GPU. Uses {profileName}&apos;s authentic audio sample. No ElevenLabs or cloud API required.
                 </p>
               </div>
 

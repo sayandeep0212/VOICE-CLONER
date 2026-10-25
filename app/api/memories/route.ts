@@ -38,9 +38,14 @@ export async function POST(req: NextRequest) {
     // Generate 768-dim embedding for pgvector RAG
     const embedding = await getEmbedding(content);
 
+    const isValidUUID = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+    const GUARDIAN_DEFAULT_ID = '256880e3-c732-43a0-ba79-4f7e6f8182a4';
+    const validPersonaId = isValidUUID(personaId) ? personaId : GUARDIAN_DEFAULT_ID;
+    const memoryId = crypto.randomUUID();
+
     const memory: Memory = {
-      id: "mem-" + Date.now(),
-      persona_id: personaId || "demo-persona-ramesh-1",
+      id: memoryId,
+      persona_id: validPersonaId,
       content,
       category,
       embedding,

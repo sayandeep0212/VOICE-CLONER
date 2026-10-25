@@ -4,19 +4,20 @@ import { getEmbedding } from './embeddings';
 
 // Default starter persona for immediate demo evaluation
 export const DEFAULT_PERSONA: Persona = {
-  id: "demo-persona-ramesh-1",
-  guardian_id: "guardian-demo-user",
-  name: "Ramesh Mukherjee (Dadu)",
-  relationship: "Grandfather",
-  nicknames: ["Khoka", "Shonamoni"],
-  speaking_style: "warm, gentle, short sentences, fond memories",
+  id: "256880e3-c732-43a0-ba79-4f7e6f8182a4",
+  guardian_id: "256880e3-c732-43a0-ba79-4f7e6f8182a4",
+  name: "Debadrita",
+  relationship: "biwi",
+  nicknames: ["Shona", "Debu"],
+  speaking_style: "warm, comforting, loving, gentle",
   favorite_phrases: [
-    "Always drink your morning tea warm",
-    "Family is life's biggest blessing",
-    "Keep smiling, Khoka"
+    "Amar shona",
+    "Kemon aacho tumi?",
+    "Shob shomoy mone rekho"
   ],
-  voice_sample_path: "/samples/grandpa-voice.wav",
-  voice_id: "JBFqnCBsd6RMkjVDRZzb",
+  voice_sample_path: "/uploads/voices/voicebox-1792950870874-xxld9.wav",
+  voice_sample_url: "/uploads/voices/voicebox-1792950870874-xxld9.wav",
+  voice_id: "voicebox-1792950870874-xxld9",
   consent_confirmed: true,
   consent_at: new Date().toISOString(),
   created_at: new Date().toISOString()
@@ -24,30 +25,23 @@ export const DEFAULT_PERSONA: Persona = {
 
 export const DEFAULT_MEMORIES: Memory[] = [
   {
-    id: "mem-1",
-    persona_id: "demo-persona-ramesh-1",
-    content: "Every winter morning at 7 AM in Darjeeling, we would sit on the veranda wrapped in woolen shawls sipping hot spiced ginger tea.",
-    category: "Morning Routines",
+    id: "8a2c7181-9efa-4052-9d86-67b42e5ae7e2",
+    persona_id: "256880e3-c732-43a0-ba79-4f7e6f8182a4",
+    content: "We used to sit on the veranda drinking warm tea together every winter morning in Darjeeling.",
+    category: "Daily Routines",
     created_at: new Date().toISOString()
   },
   {
     id: "mem-2",
-    persona_id: "demo-persona-ramesh-1",
-    content: "During summer afternoons, we spent hours on the porch playing chess while listening to old songs on the Philips valve radio.",
-    category: "Childhood Games",
-    created_at: new Date().toISOString()
-  },
-  {
-    id: "mem-3",
-    persona_id: "demo-persona-ramesh-1",
-    content: "Whenever you came home from school, I always saved two sweet rasgullas in the earthen clay pot just for you.",
+    persona_id: "256880e3-c732-43a0-ba79-4f7e6f8182a4",
+    content: "Every evening we talked about our days, cooking together and sharing small peaceful moments.",
     category: "Family Traditions",
     created_at: new Date().toISOString()
   },
   {
-    id: "mem-4",
-    persona_id: "demo-persona-ramesh-1",
-    content: "We planted the mango sapling together in the backyard when you were seven years old, watering it together every Sunday morning.",
+    id: "mem-3",
+    persona_id: "256880e3-c732-43a0-ba79-4f7e6f8182a4",
+    content: "Whenever you felt tired, I would remind you: Amar shona, shob theek hoye jaabe, don't worry.",
     category: "Special Moments",
     created_at: new Date().toISOString()
   }
@@ -67,90 +61,130 @@ const LOCAL_STORAGE_KEYS = {
 export const StorageManager = {
   // --- PERSONA ---
   async getPersona(): Promise<Persona | null> {
-    if (typeof window === 'undefined') return DEFAULT_PERSONA;
-
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('personas')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-
-      if (data && !error) return data as Persona;
-    }
-
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEYS.PERSONA);
-    if (saved) {
+    if (typeof window !== 'undefined') {
       try {
-        return JSON.parse(saved);
+        const res = await fetch('/api/persona');
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.persona) {
+            localStorage.setItem(LOCAL_STORAGE_KEYS.PERSONA, JSON.stringify(json.persona));
+            return json.persona as Persona;
+          }
+        }
       } catch (e) {
-        console.error("Failed to parse saved persona", e);
+        console.warn("Could not fetch persona from server API:", e);
+      }
+
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEYS.PERSONA);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          console.error("Failed to parse saved persona", e);
+        }
       }
     }
 
-    // Initialize with default demo persona
-    localStorage.setItem(LOCAL_STORAGE_KEYS.PERSONA, JSON.stringify(DEFAULT_PERSONA));
     return DEFAULT_PERSONA;
   },
 
   async savePersona(persona: Persona): Promise<Persona> {
+    let savedPersona = persona;
     if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_KEYS.PERSONA, JSON.stringify(persona));
+      try {
+        const res = await fetch('/api/persona', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(persona)
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.persona) {
+            savedPersona = json.persona;
+          }
+        }
+      } catch (err) {
+        console.warn('Sync persona to server API notice:', err);
+      }
+      localStorage.setItem(LOCAL_STORAGE_KEYS.PERSONA, JSON.stringify(savedPersona));
     }
 
     if (isSupabaseConfigured && supabase) {
-      await supabase.from('personas').upsert(persona);
+      try {
+        await supabase.from('personas').upsert(savedPersona);
+      } catch (e) {
+        // Handled server-side by /api/persona with service role
+      }
     }
 
-    return persona;
+    return savedPersona;
   },
 
   // --- MEMORIES ---
   async getMemories(personaId?: string): Promise<Memory[]> {
-    if (typeof window === 'undefined') return DEFAULT_MEMORIES;
-
-    if (isSupabaseConfigured && supabase && personaId) {
-      const { data, error } = await supabase
-        .from('memories')
-        .select('*')
-        .eq('persona_id', personaId);
-
-      if (data && !error && data.length > 0) return data as Memory[];
-    }
-
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEYS.MEMORIES);
-    if (saved) {
+    if (typeof window !== 'undefined') {
       try {
-        const mems: Memory[] = JSON.parse(saved);
-        if (mems.length > 0) return mems;
+        const url = personaId ? `/api/memories?personaId=${encodeURIComponent(personaId)}` : '/api/memories';
+        const res = await fetch(url);
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.memories && json.memories.length > 0) {
+            localStorage.setItem(LOCAL_STORAGE_KEYS.MEMORIES, JSON.stringify(json.memories));
+            return json.memories as Memory[];
+          }
+        }
       } catch (e) {
-        console.error("Failed to parse memories", e);
+        console.warn("Could not fetch memories from server API:", e);
+      }
+
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEYS.MEMORIES);
+      if (saved) {
+        try {
+          const mems: Memory[] = JSON.parse(saved);
+          if (mems.length > 0) return mems;
+        } catch (e) {
+          console.error("Failed to parse memories", e);
+        }
       }
     }
 
-    // Initialize default memories
-    localStorage.setItem(LOCAL_STORAGE_KEYS.MEMORIES, JSON.stringify(DEFAULT_MEMORIES));
     return DEFAULT_MEMORIES;
   },
 
   async addMemory(content: string, personaId: string, category: string = 'general'): Promise<Memory> {
-    const embedding = await getEmbedding(content);
-    const newMemory: Memory = {
-      id: "mem-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
-      persona_id: personaId,
-      content,
-      category,
-      embedding,
-      created_at: new Date().toISOString()
-    };
+    let newMemory: Memory | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const res = await fetch('/api/memories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, personaId, category })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.memory) {
+            newMemory = json.memory;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not add memory via server API:", e);
+      }
+    }
 
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('memories').insert(newMemory);
+    if (!newMemory) {
+      newMemory = {
+        id: "mem-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        persona_id: personaId,
+        content,
+        category,
+        embedding: undefined,
+        created_at: new Date().toISOString()
+      };
     }
 
     if (typeof window !== 'undefined') {
       const existing = await this.getMemories(personaId);
-      const updated = [newMemory, ...existing];
+      const updated = [newMemory, ...existing.filter(m => m.id !== newMemory!.id)];
       localStorage.setItem(LOCAL_STORAGE_KEYS.MEMORIES, JSON.stringify(updated));
     }
 
@@ -208,12 +242,12 @@ export const StorageManager = {
 
   // --- DELETE ALL DATA (PRD F19 & SAFETY) ---
   async deleteAllData(): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
-      // Cascading deletion via Postgres foreign keys
-      await supabase.from('personas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    }
-
     if (typeof window !== 'undefined') {
+      try {
+        await fetch('/api/delete-all', { method: 'DELETE' });
+      } catch (e) {
+        console.warn('Delete all data API notice:', e);
+      }
       localStorage.removeItem(LOCAL_STORAGE_KEYS.PERSONA);
       localStorage.removeItem(LOCAL_STORAGE_KEYS.MEMORIES);
       localStorage.removeItem(LOCAL_STORAGE_KEYS.MESSAGES);

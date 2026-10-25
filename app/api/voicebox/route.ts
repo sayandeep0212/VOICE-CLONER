@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { toBengaliScriptIfBanglish } from '@/lib/persona';
 
 export async function GET(req: NextRequest) {
   const voiceServerUrl = process.env.VOICE_SERVER_URL || 'http://localhost:8000';
@@ -34,8 +35,9 @@ export async function GET(req: NextRequest) {
         registered_speakers: 0
       },
       engines: engines || {
-        default_engine: 'voicebox_neural',
+        default_engine: 'local_gpu_cloner',
         engines: [
+          { id: 'local_gpu_cloner', name: 'Local GPU Zero-Shot Cloner (F5-TTS Flow Matching)', type: 'zero-shot-gpu' },
           { id: 'voicebox_neural', name: 'Voicebox Neural Cloner (Pitch & Timbre Matched)', type: 'neural-timbre' },
           { id: 'qwen_tts_1.7B', name: 'Qwen3-TTS 1.7B (Flagship Voicebox Cloner)', type: 'zero-shot' },
           { id: 'qwen_tts_0.6B', name: 'Qwen3-TTS 0.6B (Fast Cloner)', type: 'zero-shot' },
@@ -59,8 +61,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const formData = await req.formData();
-    const text = (formData.get('text') as string) || 'Hello, I am speaking with your cloned voice.';
-    const engine = (formData.get('engine') as string) || 'voicebox_neural';
+    const rawText = (formData.get('text') as string) || 'Hello, I am speaking with your cloned voice.';
+    const engine = (formData.get('engine') as string) || 'local_gpu_cloner';
+    const text = engine === 'local_gpu_cloner' ? rawText : toBengaliScriptIfBanglish(rawText);
     const language = (formData.get('language') as string) || 'auto';
     const instruct = (formData.get('instruct') as string) || '';
     const speakerId = (formData.get('speaker_id') as string) || '';
@@ -79,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     const vbRes = await fetch(`${voiceServerUrl}/speak`, {
       method: 'POST',

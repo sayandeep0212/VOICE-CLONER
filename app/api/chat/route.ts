@@ -16,16 +16,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Message cannot be empty' }, { status: 400 });
     }
 
+    const isValidUUID = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+    const GUARDIAN_DEFAULT_ID = '256880e3-c732-43a0-ba79-4f7e6f8182a4';
+    const dbPersonaId = isValidUUID(personaId) ? personaId : GUARDIAN_DEFAULT_ID;
+
     // 1. Safety Pre-Check (Crisis Signals)
     const crisisCheck = detectCrisis(message);
     if (crisisCheck.isCrisis) {
       const emergencyReply = buildCrisisResponse(crisisCheck.helplineInfo);
 
       // Record crisis message in DB if configured
-      if (isSupabaseConfigured && supabase && personaId) {
+      if (isSupabaseConfigured && supabase) {
         await supabase.from('messages').insert([
-          { persona_id: personaId, role: 'user', content: message, flagged_crisis: true },
-          { persona_id: personaId, role: 'system', content: emergencyReply, flagged_crisis: true }
+          { persona_id: dbPersonaId, role: 'user', content: message, flagged_crisis: true },
+          { persona_id: dbPersonaId, role: 'system', content: emergencyReply, flagged_crisis: true }
         ]);
       }
 
@@ -42,19 +46,34 @@ export async function POST(req: NextRequest) {
     let persona: Persona = DEFAULT_PERSONA;
     let memories: Memory[] = DEFAULT_MEMORIES;
 
-    if (isSupabaseConfigured && supabase && personaId) {
-      const { data: personaData } = await supabase
-        .from('personas')
-        .select('*')
-        .eq('id', personaId)
-        .maybeSingle();
+    if (isSupabaseConfigured && supabase) {
+      // 1. Try to load specific persona by ID, or fallback to most recent persona in Supabase
+      let personaData = null;
+      if (personaId && isValidUUID(personaId)) {
+        const { data } = await supabase
+          .from('personas')
+          .select('*')
+          .eq('id', personaId)
+          .maybeSingle();
+        personaData = data;
+      }
+      if (!personaData) {
+        const { data } = await supabase
+          .from('personas')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        personaData = data;
+      }
 
       if (personaData) persona = personaData as Persona;
 
+      const effectivePersonaId = persona.id || dbPersonaId;
       const { data: memData } = await supabase
         .from('memories')
         .select('*')
-        .eq('persona_id', personaId);
+        .eq('persona_id', effectivePersonaId);
 
       if (memData && memData.length > 0) memories = memData as Memory[];
     }
@@ -86,10 +105,10 @@ export async function POST(req: NextRequest) {
     );
 
     // Save turn to database if Supabase is active
-    if (isSupabaseConfigured && supabase && personaId) {
+    if (isSupabaseConfigured && supabase) {
       await supabase.from('messages').insert([
-        { persona_id: personaId, role: 'user', content: message },
-        { persona_id: personaId, role: 'assistant', content: reply }
+        { persona_id: dbPersonaId, role: 'user', content: message },
+        { persona_id: dbPersonaId, role: 'assistant', content: reply }
       ]);
     }
 

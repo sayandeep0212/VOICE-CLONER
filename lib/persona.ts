@@ -35,3 +35,43 @@ MEMORIES:
 ${memoriesSection}
 `;
 }
+
+const BANGLISH_MAP: Record<string, string> = {
+  "amar": "আমার", "aamar": "আমার", "shona": "সোনা", "sona": "সোনা",
+  "kemon": "কেমন", "aacho": "আছো", "achho": "আছো", "acho": "আছো",
+  "tumi": "তুমি", "shob": "সব", "sob": "সব", "shomoy": "সময়",
+  "somoy": "সময়", "mone": "মনে", "rekho": "রেখো", "rekhe": "রেখে",
+  "ami": "আমি", "aami": "আমি", "tomar": "তোমার", "pashei": "পাশেই",
+  "pashe": "পাশে", "aachi": "আছি", "achhi": "আছি", "achi": "আছি",
+  "bhalo": "ভালো", "valo": "ভালো", "theko": "থেকো", "thako": "থাকো",
+  "bhalobashi": "ভালোবাসি", "baba": "বাবা", "ma": "মা", "maa": "মা",
+  "didi": "দিদি", "dada": "দাদা", "dadu": "দাদু", "thakurma": "ঠাকুরমা",
+  "khabar": "খাবার", "kheyecho": "খেয়েছো", "khawa": "খাওয়া", "keno": "কেন",
+  "kothay": "কোথায়", "dhonnobad": "ধন্যবাদ", "babu": "বাবু", "khoka": "খোকা",
+  "boshun": "বসুন", "dekho": "দেখো", "ei": "এই", "oi": "ওই", "ki": "কী",
+  "korcho": "করছো", "korchis": "করছিস", "shunechi": "শুনেছি", "ekhon": "এখন",
+  "kichu": "কিছু", "hobe": "হবে", "hoye": "হয়ে", "jaabe": "যাবে",
+  "debu": "দেবু", "debadrita": "দেবাদৃতা"
+};
+
+export function toBengaliScriptIfBanglish(text: string): string {
+  if (!text) return text;
+  if (/[\u0980-\u09FF]/.test(text)) return text;
+
+  const words = text.split(/\s+/);
+  let convertedCount = 0;
+  const result = words.map(w => {
+    const clean = w.replace(/[^\w]/g, '').toLowerCase();
+    if (BANGLISH_MAP[clean]) {
+      convertedCount++;
+      const trailingPunct = w.match(/[^\w\s]+$/)?.[0] || '';
+      return BANGLISH_MAP[clean] + trailingPunct;
+    }
+    return w;
+  });
+
+  if (convertedCount >= 2 || (words.length <= 3 && convertedCount >= 1)) {
+    return result.join(' ');
+  }
+  return text;
+}

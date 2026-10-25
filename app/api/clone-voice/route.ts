@@ -71,10 +71,12 @@ export async function POST(req: NextRequest) {
       console.warn('Voicebox local server register note (running in direct mode):', vbErr);
     }
 
-    // 4. Optional fallback to ElevenLabs if user has explicit key and requested it
+    // 4. ElevenLabs Voice Cloning (if requested or key present)
     const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
     let elevenVoiceId: string | null = null;
-    if (elevenLabsApiKey && formData.get('use_elevenlabs') === 'true') {
+    let elevenNotice: string | null = null;
+
+    if (elevenLabsApiKey && (formData.get('use_elevenlabs') === 'true' || engine === 'elevenlabs')) {
       try {
         const elevenFormData = new FormData();
         elevenFormData.append('name', name);
@@ -87,27 +89,35 @@ export async function POST(req: NextRequest) {
           body: elevenFormData
         });
 
-        if (response.ok) {
-          const elevenData = await response.json();
+        const elevenData = await response.json();
+        if (response.ok && elevenData?.voice_id) {
           elevenVoiceId = elevenData.voice_id;
+        } else {
+          elevenNotice = elevenData?.detail?.message || 'ElevenLabs clone creation returned status ' + response.status;
+          console.warn('ElevenLabs clone attempt notice:', elevenNotice);
         }
-      } catch (e) {
-        console.warn('ElevenLabs optional attempt failed, keeping Voicebox profile');
+      } catch (e: any) {
+        elevenNotice = e?.message;
+        console.warn('ElevenLabs optional attempt failed, keeping Voicebox profile:', e);
       }
     }
 
+    const effectiveEngine = elevenVoiceId ? 'ElevenLabs' : `Voicebox (${engine})`;
     return NextResponse.json({
       ok: true,
       voice_id: elevenVoiceId || voiceId,
       profile_id: voiceId,
       name,
-      engine: 'Voicebox (' + engine + ')',
+      engine: effectiveEngine,
       audio_url: localAudioUrl,
       voicebox_registered: voiceboxRegistered,
       details: voiceboxDetails,
-      message: voiceboxRegistered
-        ? 'Voice successfully cloned with Voicebox zero-shot engine!'
-        : 'Voice profile created and sample saved for Voicebox synthesis.'
+      eleven_notice: elevenNotice,
+      message: elevenVoiceId
+        ? `Voice successfully cloned with ElevenLabs! Voice ID: ${elevenVoiceId}`
+        : (voiceboxRegistered
+            ? 'Voice successfully cloned with Voicebox zero-shot engine!'
+            : 'Voice profile created and sample saved for synthesis.')
     });
 
   } catch (error: any) {
