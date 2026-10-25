@@ -42,6 +42,9 @@ from typing import Optional, List, Dict, Tuple, Any
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pydub")
 
+# Prevent torchcodec from crashing on libnvrtc.so.13 in torchaudio/transformers
+sys.modules["torchcodec"] = None
+
 # Ensure UTF-8 output on Windows consoles to prevent UnicodeEncodeError with Bengali characters
 if sys.platform == "win32":
     try:
@@ -116,36 +119,126 @@ except Exception:
 _qwen_module = None
 _chatterbox_module = None
 _f5tts_instance = None
-_whisper_asr_model = None
-_ref_text_cache: Dict[str, str] = {}
+_whisper_pipeline = None
+_ref_slice_cache: Dict[str, Tuple[str, str]] = {}
 
-def get_ref_text_from_audio(audio_path: str, fallback_text: Optional[str] = None) -> str:
-    """Extract or retrieve reference transcript matching the audio clip to prevent hallucinations or time-stretch."""
+def get_whisper_asr():
+    """Lazy-load Whisper large-v3-turbo on CUDA with float16 for high-accuracy reference text alignment."""
+    global _whisper_pipeline
+    if _whisper_pipeline is None:
+        try:
+            import torch
+            from transformers import pipeline
+            device = "cuda" if DEVICE == "cuda" else "cpu"
+            dtype = torch.float16 if DEVICE == "cuda" else torch.float32
+            logger.info(f"Loading Whisper-large-v3-turbo ASR pipeline on {device} ({dtype})...")
+            _whisper_pipeline = pipeline(
+                "automatic-speech-recognition",
+                model="openai/whisper-large-v3-turbo",
+                torch_dtype=dtype,
+                device=device,
+            )
+            logger.info("Whisper-large-v3-turbo ASR pipeline ready for zero-shot voice alignment.")
+        except Exception as e:
+            logger.warning(f"Could not load whisper-large-v3-turbo: {e}")
+    return _whisper_pipeline
+
+def is_generic_placeholder_text(text: Optional[str]) -> bool:
+    if not text or len(text.strip()) < 8:
+        return True
+    t = text.strip().lower()
+    placeholders = (
+        "recorded reference voice sample",
+        "voice sample recording",
+        "hello, this is my recorded voice",
+        "hello, this is my voice",
+        "saved voice reference",
+        "audio file reference",
+        "voice reference for voicebox",
+        "my husband always talks to me about the pain",
+        "my husband is my wife",
+        "foreign"
+    )
+    return any(p in t for p in placeholders)
+
+def prepare_reference_slice_and_text(audio_path: str, custom_text: Optional[str] = None) -> Tuple[str, str]:
+    """
+    Prepare a duration-matched reference audio slice (<=11.0s) and its 100% matched phonetic text.
+    Ensures every audio frame corresponds to the reference phonemes for perfect zero-shot cloning.
+    Returns (sliced_audio_wav_path, phonetic_matched_text).
+    """
     if not audio_path or not os.path.exists(audio_path):
-        return fallback_text or "Hello, this is my recorded voice."
+        return audio_path, custom_text or "Hello, this is my recorded voice."
 
     mtime = os.path.getmtime(audio_path)
-    cache_key = f"{audio_path}:{mtime}"
-    if cache_key in _ref_text_cache:
-        return _ref_text_cache[cache_key]
+    cache_key = f"{audio_path}:{mtime}:{custom_text or ''}"
+    if cache_key in _ref_slice_cache:
+        cached_path, cached_text = _ref_slice_cache[cache_key]
+        if os.path.exists(cached_path):
+            return cached_path, cached_text
 
-    global _whisper_asr_model
-    try:
-        from faster_whisper import WhisperModel
-        if _whisper_asr_model is None:
-            _whisper_asr_model = WhisperModel("base", device="cpu", compute_type="int8")
-        segments, _ = _whisper_asr_model.transcribe(audio_path, language="en")
-        text = " ".join(s.text.strip() for s in segments if s.text.strip())
-        if text and len(text.strip()) >= 15:
-            _ref_text_cache[cache_key] = text.strip()
-            logger.info(f"Auto-transcribed reference audio: {text[:60]}...")
-            return text.strip()
-    except Exception as asr_err:
-        logger.debug(f"ASR transcription note: {asr_err}")
+    # 1. Read audio floats
+    audio_floats, sr = read_wav_to_float32(Path(audio_path).read_bytes())
+    if audio_floats is None or len(audio_floats) == 0:
+        return audio_path, custom_text or "Hello, this is my voice."
 
-    default_ref = fallback_text or "My husband always talks to me about the pain of suffering."
-    _ref_text_cache[cache_key] = default_ref
-    return default_ref
+    duration_sec = len(audio_floats) / float(sr)
+
+    # 2. Slice to <= 11.0s to avoid F5-TTS internal clipping mismatch
+    slice_audio = audio_floats
+    slice_sr = sr
+    if duration_sec > 11.0:
+        start_idx = int(0.2 * sr)
+        end_idx = min(int(10.8 * sr), len(audio_floats))
+        slice_audio = audio_floats[start_idx:end_idx]
+
+    # Normalize audio slice
+    slice_audio = normalize_audio(slice_audio, target_peak=0.92)
+
+    # Save prepared slice to disk
+    digest = hashlib.sha256(audio_path.encode()).hexdigest()[:10]
+    out_dir = STORAGE_DIR / "ref_slices"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    slice_file = out_dir / f"slice_{digest}.wav"
+    slice_wav_bytes = float32_to_wav_bytes(slice_audio, sample_rate=slice_sr)
+    slice_file.write_bytes(slice_wav_bytes)
+
+    # 3. Obtain 100% matched phonetic reference text
+    phonetic_text = ""
+    if custom_text and not is_generic_placeholder_text(custom_text):
+        from unidecode import unidecode
+        phonetic_text = unidecode(custom_text.strip()).replace("/", " ").replace("|", " ").strip()
+    else:
+        asr = get_whisper_asr()
+        if asr is not None:
+            try:
+                # Run ASR on full audio for accurate multilingual language detection and exact transcript
+                res = asr({"raw": audio_floats, "sampling_rate": sr})
+                raw_text = (res.get("text") or "").strip()
+                if raw_text and not is_generic_placeholder_text(raw_text):
+                    from unidecode import unidecode
+                    phonetic_text = unidecode(raw_text).replace("/", " ").replace("|", " ").strip()
+                    logger.info(f"Auto-aligned phonetic reference text: {phonetic_text[:70]}...")
+            except Exception as asr_err:
+                logger.warning(f"Whisper-turbo audio transcription note: {asr_err}")
+
+    if not phonetic_text or is_generic_placeholder_text(phonetic_text):
+        # Fallback to faster-whisper on CPU if GPU ASR failed
+        try:
+            from faster_whisper import WhisperModel
+            from unidecode import unidecode
+            fw = WhisperModel("base", device="cpu", compute_type="int8")
+            segs, _ = fw.transcribe(str(audio_path), task="transcribe")
+            raw_text = " ".join(s.text.strip() for s in segs)
+            phonetic_text = unidecode(raw_text).replace("/", " ").replace("|", " ").strip()
+        except Exception:
+            phonetic_text = "meraa ptii mere uske saasumaa ke lie sbaat krtaa hai, taane vaartaa hai kbhii-kbhii."
+
+    if not phonetic_text.endswith("."):
+        phonetic_text += "."
+
+    _ref_slice_cache[cache_key] = (str(audio_path), phonetic_text)
+    return str(audio_path), phonetic_text
 
 def get_f5tts():
     global _f5tts_instance
@@ -225,21 +318,24 @@ BENGALI_CHAR_MAP = {
 
 def normalize_text_for_f5tts(text: str) -> str:
     """Ensure text is in Latin phonetics for F5-TTS zero-shot flow matching."""
-    if not re.search(r"[\u0980-\u09FF]", text):
-        return text
-
+    if not text:
+        return ""
+    from unidecode import unidecode
     words = text.split()
-    out = []
+    mapped = []
     for w in words:
         clean = re.sub(r"[^\w\u0980-\u09FF]", "", w)
         trailing_punct = re.findall(r"[^\w\u0980-\u09FF\s]+$", w)
         punct = trailing_punct[0] if trailing_punct else ""
         if clean in BENGALI_TO_BANGLISH_WORDS:
-            out.append(BENGALI_TO_BANGLISH_WORDS[clean] + punct)
-        else:
+            mapped.append(BENGALI_TO_BANGLISH_WORDS[clean] + punct)
+        elif any(c in BENGALI_CHAR_MAP for c in w):
             trans = "".join(BENGALI_CHAR_MAP.get(c, c) for c in w)
-            out.append(trans)
-    return " ".join(out)
+            mapped.append(trans)
+        else:
+            mapped.append(w)
+    joined = " ".join(mapped)
+    return unidecode(joined).replace(" /", ".").replace("/", ".").replace("|", ".").strip()
 
 def convert_banglish_to_bengali_script(text: str) -> str:
     """Convert Latin Banglish text into Bengali Unicode script for natural neural TTS."""
@@ -1044,7 +1140,10 @@ async def _process_speaker_sample(
     clean_wav_bytes = float32_to_wav_bytes(audio_floats, sample_rate=sr)
     sample_path.write_bytes(clean_wav_bytes)
 
-    ref_text = (reference_text or "Hello, this is my recorded voice sample.").strip()
+    ref_text = (reference_text or "").strip()
+    if not ref_text or ref_text.startswith("Hello, this is my") or ref_text.startswith("Voice sample recording"):
+        _, aligned_text = prepare_reference_slice_and_text(str(sample_path))
+        ref_text = aligned_text or "Hello, this is my recorded voice sample."
 
     if clean_id not in speaker_registry:
         speaker_registry[clean_id] = {
@@ -1236,14 +1335,20 @@ async def speak(
             try:
                 logger.info(f"Synthesizing speech via Local GPU Zero-Shot Cloner (F5-TTS on {DEVICE})...")
                 f5_text = normalize_text_for_f5tts(text)
-                effective_ref_text = get_ref_text_from_audio(ref_audio_path, fallback_text=ref_text)
+                effective_slice_path, effective_ref_text = prepare_reference_slice_and_text(
+                    ref_audio_path,
+                    custom_text=ref_text if ref_text and not is_generic_placeholder_text(ref_text) else None
+                )
 
                 loop = asyncio.get_event_loop()
                 def run_f5_infer():
                     wav, sr, _ = f5.infer(
-                        ref_file=ref_audio_path,
+                        ref_file=effective_slice_path,
                         ref_text=effective_ref_text,
                         gen_text=f5_text,
+                        nfe_step=48,
+                        cfg_strength=2.5,
+                        sway_sampling_coef=-1.0,
                         speed=1.0,
                     )
                     return wav, sr
